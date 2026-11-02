@@ -1,45 +1,64 @@
 # Sidequest
 
-A first activity-planning prototype: preference survey, editable settings, a personalized in-app digest, and a saved ticket watchlist.
+A date-based activity finder with editable music and sports preferences, live event-provider adapters, and a saved watchlist. Google Calendar is deliberately deferred.
 
-## Run
+## Run and deploy
 
-Requires Node.js 22 or later. No third-party runtime dependencies or API keys are needed.
+Requires Node.js >=22.
 
 ```sh
-cd /workspace/ubiquitous-broccoli
+npm ci
 npm start
 ```
 
-The server uses port 3000 by default; set `PORT` to change it. `npm run dev` restarts the server when server files change. Refresh the browser to see frontend edits.
+Default port: 3000; respects Render's `PORT`. Render build command: `npm ci`; start command: `npm start`. Deploy the latest `main` commit after pushing changes.
 
 ```sh
 npm test
 ```
 
-Tests cover preference validation, filtering (including round-trip travel within the available time window), and real HTTP responses. The test environment must permit local listening sockets.
+Eight tests exercise dates, preference ranking, provider parsing/normalization, upstream failures, and actual HTTP responses with provider fixtures. Local listening sockets are required. Provider fixtures do not establish live upstream availability.
 
-## Available now
+## Event sources
 
-- First-run survey and editable preferences: ZIP, interests, budget per person, transit limit, daily/weekly digest preference, days, and hours.
-- Defaults: 11201, public transit only, 60 minutes each way, $200, weekly digest.
-- Sample recommendations filtered by interests, budget, illustrative transit time, and manual availability.
-- Save/remove watchlist, dismiss ideas, restore dismissed ideas.
-- Preferences and saved/dismissed IDs persist in this browser's local storage. There is no account or server-side profile storage.
-- Responsive layout, labeled forms, and keyboard-operable native controls.
+By default the server requests NYC Parks' public XML feed (`https://www.nycgovparks.org/xml/events_3000.xml`), without an API key. This covers NYC public activities, not every concert, professional sports game, restaurant, museum, or ticket release. Feed format and availability must be confirmed in the deployed environment: the development environment's network proxy blocked outbound checks. An unavailable/unreadable source produces an explicit error, never sample events. Only listings with a parseable event date and source link are displayed. Undated RSS publication timestamps are not treated as event dates. A feed with no dated events is treated as unreadable; a readable feed with no events in the selected range produces an empty result.
 
-## Prototype boundaries
+Optional server environment settings:
 
-All six activities are illustrative NYC concepts, not actual upcoming listings. Prices, schedules, and transit times are examples. They have no real dates or purchase links. The ZIP is stored as a preference but does not perform geocoding or change the sample geography. Booking notes describe general considerations, not verified event-specific sellout predictions. There is no live discovery, AI inference, route calculation, automatic scheduling, background ticket monitoring, notification delivery, email, or Google Calendar integration. Daily/weekly is a saved preference only; digests are filtered on opening the app.
+| Variable | Purpose |
+|---|---|
+| `PUBLIC_EVENTS_FEED_URL` | Override with a trusted XML feed compatible with the parser (NYC Parks-style events, RSS items, or Atom entries with explicit event dates). Not a general web scraper. Coverage is still treated as NYC. |
+| `TICKETMASTER_API_KEY` | Optional Discovery API key; switches discovery to Ticketmaster for broader ticketed-event coverage. Never sent to the browser. |
+| `SPOTIFY_CLIENT_ID` | Public Spotify application client ID; enables optional one-time taste import. It is not a client secret. |
 
-No Google credentials are requested or collected. Calendar availability currently uses manually selected days and hours, not actual calendar events. Font loading optionally uses Google Fonts; system fonts work offline.
+No keys are required for the default public-feed adapter. For Ticketmaster, requests search within 25 miles of the ZIP and take up to 200 results; the UI warns when capped. Cancelled, postponed, and off-sale Ticketmaster listings are excluded. Dates use the venue's local event date, with an inclusive user-selected end date. Unknown prices and times are retained and labeled. Listed prices may exclude fees. NYC Parks results cover NYC as a whole, not a calculated radius from the ZIP.
 
-## Next implementation milestones
+## Preferences
 
-1. Add a live-event provider behind the server, with source URLs, actual event dates, last-checked timestamps, pricing including known fees, and deduplication. Keep missing facts explicit.
-2. Add transit routing from the configured ZIP and event location for the actual travel date; treat unknown travel time as unknown rather than assuming eligibility.
-3. Add Google Calendar OAuth through a Google Cloud project with configured redirect URIs and minimum read-only availability scope. Store tokens securely on the server, never in local storage; implement disconnect and revocation handling.
-4. Add persistent profiles and a background scheduler for dated digests, ticket-release checks, timezone-aware reminders, retry handling, and notification deduplication. Show verified sale timestamps separately from estimated urgency.
-5. Add authenticated accounts before sharing this application publicly or storing personal calendar data.
+- User-selected dates (up to 366 days), available weekdays, and event-start hours.
+- ZIP, budget, transit goal, activity categories, daily/weekly preference.
+- Favorite artists/genres and sports/teams boost matching events. They are keyword matches, not inferred AI similarities or guaranteed exact entity matches.
+- Comma-separated exclusions hide matching titles, artists, genres, and venues.
+- Save event snapshots, dismiss recommendations, restore dismissed events.
+- Browser local storage retains preferences and saved snapshots. Old illustrative watchlist entries are removed on migration; they are not represented as real events. No cross-device accounts or synchronization.
 
-The existing checkout is already isolated for cloud tasks; use it directly rather than creating a worktree unless requested.
+Unknown transit times do not falsely pass a one-hour travel constraint: the UI labels every route unverified and states the transit preference is not enforced. Event end times, travel buffers, calendar conflicts, and accessibility details are not evaluated. Manual hours constrain event starts only. Spotify import adds explicit taste data; it does not learn from save/dismiss behavior.
+
+## Spotify setup (optional)
+
+1. Create a Spotify Developer application and check current Spotify eligibility, development-mode, and permitted-user requirements. These may limit who can connect.
+2. Add the exact redirect URI `https://sidequest-1zpd.onrender.com/` (including trailing slash), or your actual deployed HTTPS origin with `/`.
+3. Add `SPOTIFY_CLIENT_ID` to Render's Environment settings and redeploy. Do not add a client secret: the browser uses Authorization Code with PKCE and the `user-top-read` scope.
+4. In Preferences, save your edits, then click **Import from Spotify** and grant permission. Review the imported artists/genres afterward.
+
+OAuth uses a random, expiring state and PKCE verifier in session storage. The token is used transiently to retrieve up to 50 medium-term top artists, then is not retained. Tokens are never put in local storage or sent to this server. Imported artist names and genres remain in the local profile. There is no ongoing Spotify sync. To revoke the app's grant, use Spotify's account app settings. No live OAuth login has been validated in development; it needs a real registered application and eligible account. Spotify documentation access was blocked by the development network proxy.
+
+DICE account integration is not implemented or claimed to be supported. Add DICE artists manually. Never provide account passwords to this app.
+
+## Ticket planning and remaining work
+
+Ticketmaster public on-sale timestamps are shown when supplied, with New York display time and a warning that presales may differ. Rescheduled events are flagged. Sellout risk and day-of availability remain unknown. NYC Parks ticket details link to the organizer; no invented urgency is assigned.
+
+No scheduled notifications, automatic digests, email, Google Calendar, transit routing, authentication, or background monitoring are implemented. The watchlist stores dated snapshots; users must check organizer links for current availability. The daily/weekly setting is retained for future scheduling and does not trigger delivery.
+
+The existing checkout is isolated for cloud tasks: use it directly; do not create a worktree unless requested. After each cloud task starts, run `npm ci` when needed and `npm start`; running processes do not survive a snapshot.
