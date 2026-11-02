@@ -14,9 +14,16 @@ export async function discover({zip,from,to}, {apiKey=process.env.TICKETMASTER_A
  // Broad UTC boundaries avoid dropping events whose local day differs from UTC.
  const end=new Date(to+'T00:00:00Z');end.setUTCDate(end.getUTCDate()+2);
  for(const [k,v] of Object.entries({apikey:apiKey,postalCode:zip,radius:'25',unit:'miles',countryCode:'US',startDateTime:from+'T00:00:00Z',endDateTime:end.toISOString().replace('.000',''),sort:'date,asc',size:'200'}))url.searchParams.set(k,v);
- let response;try{response=await fetcher(url,{signal:AbortSignal.timeout(20000)});}catch{throw Object.assign(new Error('The event provider could not be reached. Please try again later.'),{status:502});}
- if(!response.ok)throw Object.assign(new Error(response.status===401||response.status===403?'Ticketmaster rejected the configured API key. Check its Discovery API access in Render.':response.status===429?'Ticketmaster’s request limit was reached. Please try again later.':'The event provider returned an error. Please try again later.'),{status:502});
- let data;try{data=await response.json();}catch{throw Object.assign(new Error('The event provider returned an invalid response.'),{status:502});}
- const events=(data._embedded?.events||[]).map(normalize).filter(e=>e.date>=from&&e.date<=to&&!['cancelled','canceled','postponed','offsale'].includes(e.status));
- return {events:[...new Map(events.map(e=>[e.id,e])).values()],source:'Ticketmaster',truncated:(data.page?.totalElements||0)>200,notice:'Search covers a 25-mile radius, not a one-hour transit boundary. Travel times, event end times, and fees are not verified. Coverage is limited to Ticketmaster’s feed.'};
+ const signal=AbortSignal.timeout(20000);const raw=[];let total=0;let pages=1;let incomplete=false;
+ for(let page=0;page<Math.min(pages,5);page++){
+  url.searchParams.set('page',String(page));
+  let response;try{response=await fetcher(new URL(url),{signal});}catch{if(raw.length){incomplete=true;break;}throw Object.assign(new Error('The event provider could not be reached. Please try again later.'),{status:502});}
+  if(!response.ok){if(raw.length){incomplete=true;break;}throw Object.assign(new Error(response.status===401||response.status===403?'Ticketmaster rejected the configured API key. Check its Discovery API access in Render.':response.status===429?'Ticketmaster’s request limit was reached. Please try again later.':'The event provider returned an error. Please try again later.'),{status:502});}
+  let data;try{data=await response.json();}catch{if(raw.length){incomplete=true;break;}throw Object.assign(new Error('The event provider returned an invalid response.'),{status:502});}
+  const batch=data._embedded?.events||[];raw.push(...batch);
+  total=data.page?.totalElements??raw.length;pages=data.page?.totalPages??Math.max(1,Math.ceil(total/200));
+  if(!batch.length)break;
+ }
+ const events=raw.map(normalize).filter(e=>e.date>=from&&e.date<=to&&!['cancelled','canceled','postponed','offsale'].includes(e.status));
+ return {events:[...new Map(events.map(e=>[e.id,e])).values()],source:'Ticketmaster',truncated:total>raw.length||incomplete,totalAvailable:total,notice:'Search covers a 25-mile radius, not a one-hour transit boundary. Travel times, event end times, and fees are not verified. Up to 1,000 provider results are retrieved; narrow the dates if results are capped.'};
 }

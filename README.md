@@ -17,21 +17,21 @@ Default port: 3000; respects Render's `PORT`. Render build command: `npm ci`; st
 npm test
 ```
 
-Eight tests exercise dates, preference ranking, provider parsing/normalization, upstream failures, and actual HTTP responses with provider fixtures. Local listening sockets are required. Provider fixtures do not establish live upstream availability.
+Eleven tests exercise dates, preference ranking, provider parsing/normalization, upstream failures, and actual HTTP responses with provider fixtures. Local listening sockets are required. Provider fixtures do not establish live upstream availability.
 
 ## Event sources
 
-By default the server requests NYC Parks' public XML feed (`https://www.nycgovparks.org/xml/events_3000.xml`), without an API key. This covers NYC public activities, not every concert, professional sports game, restaurant, museum, or ticket release. Feed format and availability must be confirmed in the deployed environment: the development environment's network proxy blocked outbound checks. An unavailable/unreadable source produces an explicit error, never sample events. Only listings with a parseable event date and source link are displayed. Undated RSS publication timestamps are not treated as event dates. A feed with no dated events is treated as unreadable; a readable feed with no events in the selected range produces an empty result.
+With no Ticketmaster key, the server requests NYC Parks' public XML feed (`https://www.nycgovparks.org/xml/events_3000.xml`), without an API key. This covers NYC public activities, not every concert, professional sports game, restaurant, museum, or ticket release. Feed format and availability must be confirmed in the deployed environment: the development environment's network proxy blocked outbound checks. An unavailable/unreadable source produces an explicit error, never sample events. Only listings with a parseable event date and source link are displayed. Undated RSS publication timestamps are not treated as event dates. A feed with no dated events is treated as unreadable; a readable feed with no events in the selected range produces an empty result.
 
 Optional server environment settings:
 
 | Variable | Purpose |
 |---|---|
 | `PUBLIC_EVENTS_FEED_URL` | Override with a trusted XML feed compatible with the parser (NYC Parks-style events, RSS items, or Atom entries with explicit event dates). Not a general web scraper. Coverage is still treated as NYC. |
-| `TICKETMASTER_API_KEY` | Optional Discovery API key; switches discovery to Ticketmaster for broader ticketed-event coverage. Never sent to the browser. |
+| `TICKETMASTER_API_KEY` | Optional Discovery API key; enables Ticketmaster alongside NYC Parks for broader ticketed-event coverage. Never sent to the browser. |
 | `SPOTIFY_CLIENT_ID` | Public Spotify application client ID; enables optional one-time taste import. It is not a client secret. |
 
-No keys are required for the default public-feed adapter. For Ticketmaster, requests search within 25 miles of the ZIP and take up to 200 results; the UI warns when capped. Cancelled, postponed, and off-sale Ticketmaster listings are excluded. Dates use the venue's local event date, with an inclusive user-selected end date. Unknown prices and times are retained and labeled. Listed prices may exclude fees. NYC Parks results cover NYC as a whole, not a calculated radius from the ZIP.
+No keys are required for the default public-feed adapter. For Ticketmaster, requests search within 25 miles of the ZIP and retrieve up to five pages (1,000 results); the UI warns when capped or partially retrieved. Cancelled, postponed, and off-sale Ticketmaster listings are excluded. The source selector supports all available sources, Ticketmaster only, or Parks only. Each source reports its count or failure independently; Parks failure does not discard Ticketmaster results. A temporary show-all toggle bypasses preference filters without modifying the saved profile, and filter counts explain hidden events. Exact-date searches still honor saved weekdays and event-start hours. Dates use the venue's local event date, with an inclusive user-selected end date. Unknown prices and times are retained and labeled. Listed prices may exclude fees. NYC Parks results cover NYC as a whole, not a calculated radius from the ZIP.
 
 ## Preferences
 

@@ -58,3 +58,27 @@ test('HTTP endpoints return real provider results and errors without exposing cr
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{const base=`http://127.0.0.1:${server.address().port}`;const page=await fetch(base);assert.equal(page.status,200);assert.match(await page.text(),/Sidequest/);const status=await(await fetch(base+'/api/status')).json();assert.equal(status.calendarConnected,false);assert.equal('TICKETMASTER_API_KEY' in status,false);const data=await(await fetch(base+'/api/events?zip=11201')).json();assert.equal(data.events[0].title,event.title);const fail=await fetch(base+'/api/events?zip=00000');assert.equal(fail.status,502);assert.equal((await fail.json()).error,'Provider unavailable');assert.equal((await fetch(base+'/missing')).status,404);assert.equal((await fetch(base+'/api/events',{method:'POST'})).status,405);}finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('December 21–25 2026 boundaries are sent correctly and later pages are searched',async()=>{
+ const calls=[];
+ const r=await discover({zip:'11201',from:'2026-12-21',to:'2026-12-25'},{apiKey:'test-only',fetcher:async url=>{
+  calls.push(new URL(url));const page=Number(url.searchParams.get('page'));
+  return Response.json({page:{totalElements:201,totalPages:2},_embedded:{events:page===0?[{id:'early',dates:{start:{localDate:'2026-12-21'}}}]:[{id:'xmas',dates:{start:{localDate:'2026-12-25'}}},{id:'too-late',dates:{start:{localDate:'2026-12-26'}}}]}});
+ }});
+ assert.equal(calls.length,2);assert.equal(calls[0].searchParams.get('startDateTime'),'2026-12-21T00:00:00Z');assert.equal(calls[0].searchParams.get('endDateTime'),'2026-12-27T00:00:00Z');assert.deepEqual(r.events.map(e=>e.id),['tm-early','tm-xmas']);
+});
+
+test('combined sources keep successful events and report Parks failures independently',async()=>{
+ const {discoverSources}=await import('../discovery.js');let parksCalls=0;
+ const r=await discoverSources({source:'all'},{hasTicketmaster:true,ticketmaster:async()=>({events:[event],source:'Ticketmaster',notice:'Ticketmaster notice'}),parks:async()=>{parksCalls++;throw Object.assign(new Error('Feed unreadable'),{status:502});}});
+ assert.equal(parksCalls,1);assert.equal(r.events.length,1);assert.equal(r.sources.find(s=>s.name==='NYC Parks').status,'error');assert.match(r.sources.find(s=>s.name==='NYC Parks').error,/unreadable/);
+ const only=await discoverSources({source:'ticketmaster'},{hasTicketmaster:true,ticketmaster:async()=>({events:[],source:'Ticketmaster'}),parks:async()=>{throw new Error('Should not run');}});assert.equal(only.events.length,0);assert.equal(only.sources.length,1);
+ await assert.rejects(()=>discoverSources({source:'bogus'}),{status:400});
+});
+
+test('filter diagnostics explain December results hidden by retained weekday preferences',async()=>{
+ const {filterSummary}=await import('../public/logic.js');
+ const p={...profile,dateFrom:'2026-12-21',dateTo:'2026-12-25',days:['Sat','Sun']};
+ const e={...event,date:'2026-12-21'};assert.equal(matches(e,p),false);assert.equal(filterSummary([e],p).day,1);
+ assert.equal(matches(e,{...p,days:['Mon','Tue','Wed','Thu','Fri']}),true);
+});
